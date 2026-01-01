@@ -1,5 +1,4 @@
 .vscode
-venv/
 __pycache__/
 .env
 secrets/
@@ -7,3 +6,7 @@ secrets/
 private_key.pem
 hi.txt
 data/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
