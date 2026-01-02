@@ -1,14 +1,16 @@
 from datetime import datetime
 from typing import List
 import uuid
-from fastapi import FastAPI, File, Form, HTTPException, Header, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Header, Request, UploadFile, status
 
 from app.github.github_ops import create_repo, initialize_gitops_repo, protect_main_branch
 from app.merge import try_merge_pr
-from app.publishing import publish_experiment_backend
+from app.publishing import publish_experiment
 from app.db import get_connection, init_db
-from app.models import CreateExperimentRequest, CreateExperimentResponse, InitRequest, InitResponse, OnboardStatusResponse, PublishResponse
+from app.db_utils import fetch_experiment
+from app.models import CreateExperimentRequest, CreateExperimentResponse, PublishResponse
 from app.utils import verify_signature
+from app.auth import AuthenticatedUser, get_current_user
 
 app = FastAPI(title="HEDA GitOps Service")
 
@@ -20,8 +22,10 @@ def health():
 def startup():
     init_db()
     
-@app.post("/experiments", response_model=CreateExperimentResponse)
-def create_experiment(req: CreateExperimentRequest):
+@app.post("/experiments", response_model=CreateExperimentResponse, status_code=status.HTTP_201_CREATED)
+def create_experiment(req: CreateExperimentRequest, 
+                      user: AuthenticatedUser = Depends(get_current_user),
+):
     exp_id = f"exp_{uuid.uuid4().hex[:8]}"
     repo_name = f"{exp_id}-{req.exp_name}-gitops"
     now = datetime.utcnow().isoformat()
@@ -42,10 +46,10 @@ def create_experiment(req: CreateExperimentRequest):
 
         cur.execute(
             """
-            INSERT INTO experiments (uuid, repo_name, created_at)
+            INSERT INTO experiments (uuid, repo_name, owner_sub, created_at)
             VALUES (%s, %s, %s, %s, %s)
             """,
-            (exp_id, repo_name, now),
+            (exp_id, repo_name, user.sub, now),
         )
 
         conn.commit()
@@ -60,16 +64,38 @@ def create_experiment(req: CreateExperimentRequest):
 
     return CreateExperimentResponse(
         experiment_id=exp_id,
-        repo_url=repo_url,
+        detail="Experiment successfully created",
     )
 
-@app.post("/publish", response_model=PublishResponse)
-async def publish_experiment(
+
+def require_experiment_owner(
+    exp_id: str = Form(...),
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    row = fetch_experiment(exp_id)
+
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Experiment not found",
+        )
+
+    if row.owner_sub != user.sub:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not own this experiment",
+        )
+
+    return row
+
+
+@app.post("/experiments/publish", response_model=PublishResponse)
+async def publish(
     exp_id: str = Form(...),
     files: List[UploadFile] = File(...),
-):
- 
-    return await publish_experiment_backend(exp_id, files)
+    experiment = Depends(require_experiment_owner),
+): 
+    return await publish_experiment(exp_id, files)
 
 
 @app.post("/github/webhook")

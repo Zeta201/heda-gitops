@@ -4,18 +4,18 @@ import hashlib
 from typing import List
 from fastapi import UploadFile
 from .models import PublishResponse
-from .db_utils import get_repo_name_by_experiment_id
+from .db_utils import fetch_experiment
 from .config import GITHUB_ORG, get_admin_org
 
 from .templates.pr_template import pr_title_template, pr_doc_template
 
 
-async def publish_experiment_backend(
+async def publish_experiment(
     exp_id: str,
     files: List[UploadFile]
 ):
 
-    repo_name = get_repo_name_by_experiment_id(exp_id)
+    repo_name = fetch_experiment(exp_id).repo_name
     org = get_admin_org(GITHUB_ORG)
     repo = org.get_repo(repo_name)
 

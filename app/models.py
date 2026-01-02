@@ -21,7 +21,7 @@ class OnboardStatusResponse(BaseModel):
     
 class CreateExperimentResponse(BaseModel):
     experiment_id: str
-    repo_url: str
+    detail: str
 
 class CreateExperimentRequest(BaseModel):
     exp_name: str

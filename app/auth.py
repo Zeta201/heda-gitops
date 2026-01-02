@@ -27,6 +27,12 @@ AUTH0_AUDIENCE = os.environ.get("AUTH0_AUDIENCE")  # e.g., https://heda.example.
 
 JWKS_URL = f"https://{AUTH0_DOMAIN}/.well-known/jwks.json"
 
+class AuthenticatedUser(BaseModel):
+    sub: str
+    email: Optional[str] = None
+    name: Optional[str] = None
+    scopes: list[str] = []
+    raw: dict
 
 @lru_cache()
 def get_jwks():
@@ -73,25 +79,53 @@ def verify_token(token: str) -> dict:
     return payload
 
 
-def get_current_user(authorization: str = Header(...)) -> Dict:
-    """
-    Verify Auth0 access token and return full JWT payload.
-    """
+from fastapi import Depends, Header, HTTPException, status
+from pydantic import BaseModel
+from typing import Optional
+
+
+def get_current_user(
+    authorization: str = Header(..., description="Bearer access token"),
+) -> AuthenticatedUser:
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid Authorization header")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Authorization header format",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-    token = authorization.removeprefix("Bearer ").strip()
-    payload = verify_token(token)
+    token = authorization[len("Bearer "):].strip()
 
-    if not payload.get("sub"):
-        raise HTTPException(status_code=401, detail="Invalid token")
+    try:
+        payload = verify_token(token)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-    user = get_userinfo(token)
-    user.update({
-        "user_id": payload.get("sub")
-    })
-    return user
+    sub = payload.get("sub")
+    if not sub:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token missing subject",
+        )
 
+    return AuthenticatedUser(
+        sub=sub,
+        email=payload.get("email"),
+        name=payload.get("name"),
+        scopes=payload.get("scope", "").split(),
+        raw=payload,
+    )
 
 def extract_user_id(
     user: dict,
