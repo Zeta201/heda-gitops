@@ -17,6 +17,10 @@ from github import GithubException
 
 app = FastAPI(title="HEDA GitOps Backend")
 
+@app.get("/healthz")
+def health():
+    return {"status": "ok"}
+
 @app.post("/init", response_model=InitResponse)
 def init_experiment(
     request: InitRequest,
