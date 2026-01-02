@@ -18,3 +18,10 @@ class OnboardRequest(BaseModel):
 class OnboardStatusResponse(BaseModel):
     onboarded: bool
     invitation: str
+    
+class CreateExperimentResponse(BaseModel):
+    experiment_id: str
+    repo_url: str
+
+class CreateExperimentRequest(BaseModel):
+    exp_name: str
